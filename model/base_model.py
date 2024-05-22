@@ -4,6 +4,11 @@ from collections import OrderedDict
 from abc import ABC, abstractmethod
 from . import networks
 
+"""
+機械学習モデルの基底クラスを定義するもの
+抽象基底クラス(ABC:ABstract Base Class)として設計
+このクラスを継承してカスタムモデルを作成する
+"""
 
 class BaseModel(ABC):
     """This class is an abstract base class (ABC) for models.
@@ -29,6 +34,10 @@ class BaseModel(ABC):
             -- self.visual_names (str list):        specify the images that you want to display and save.
             -- self.optimizers (optimizer list):    define and initialize optimizers. You can define one optimizer for each network. If two networks are updated at the same time, you can use itertools.chain to group them. See cycle_gan_model.py for an example.
         """
+        """
+        opt: モデルの設定やオプションを格納するオブジェクト．BaseOptionsのサブクラスである必要がある
+        GPUの設定,モデルの保存ディレクトリの設定
+        """
         self.opt = opt
         self.gpu_ids = opt.gpu_ids
         self.isTrain = opt.isTrain
@@ -43,6 +52,9 @@ class BaseModel(ABC):
         self.image_paths = []
         self.metric = 0  # used for learning rate policy 'plateau'
 
+    """
+    モデル固有のオプションをコマンドラインパーサーに追加したり，既存のオプションのデフォルト値を変更したりするためのメソッド
+    """
     @staticmethod
     def modify_commandline_options(parser, is_train):
         """Add new model-specific options, and rewrite default values for existing options.
@@ -56,6 +68,9 @@ class BaseModel(ABC):
         """
         return parser
 
+    """
+    データローダから入力データを受け取り，必要な前処理を行う
+    """
     @abstractmethod
     def set_input(self, input):
         """Unpack input data from the dataloader and perform necessary pre-processing steps.
@@ -65,16 +80,25 @@ class BaseModel(ABC):
         """
         pass
 
+    """
+    フォワードパスを実行．中間結果を生成
+    """
     @abstractmethod
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
         pass
 
+    """
+    損失の計算，勾配の計算，およびネットワークの重みの更新を行う
+    """
     @abstractmethod
     def optimize_parameters(self):
         """Calculate losses, gradients, and update network weights; called in every training iteration"""
         pass
 
+    """
+    ネットワークのロードと表示，およびスケジューラの作成
+    """
     def setup(self, opt):
         """Load and print networks; create schedulers
 
@@ -88,13 +112,18 @@ class BaseModel(ABC):
             self.load_networks(load_suffix)
         self.print_networks(opt.verbose)
 
+    """
+    テスト時にモデルを評価モードに設定
+    """
     def eval(self):
         """Make models eval mode during test time"""
         for name in self.model_names:
             if isinstance(name, str):
                 net = getattr(self, 'net' + name)
                 net.eval()
-
+    """
+    テスト時にフォワードパスを実行し，追加の視覚化結果を計算
+    """
     def test(self):
         """Forward function used in test time.
 
@@ -105,14 +134,23 @@ class BaseModel(ABC):
             self.forward()
             self.compute_visuals()
 
+    """
+    追加の出力画像を計算
+    """
     def compute_visuals(self):
         """Calculate additional output images for visdom and HTML visualization"""
         pass
 
+    """
+    現在使用中のデータの画像パスを返す
+    """
     def get_image_paths(self):
         """ Return image paths that are used to load current data"""
         return self.image_paths
 
+    """
+    すべてのネットワークの学習率を更新する
+    """
     def update_learning_rate(self):
         """Update learning rates for all the networks; called at the end of every epoch"""
         old_lr = self.optimizers[0].param_groups[0]['lr']
@@ -125,6 +163,9 @@ class BaseModel(ABC):
         lr = self.optimizers[0].param_groups[0]['lr']
         print('learning rate %.7f -> %.7f' % (old_lr, lr))
 
+    """
+    視覚化のための画像を返す
+    """
     def get_current_visuals(self):
         """Return visualization images. train.py will display these images with visdom, and save the images to a HTML"""
         visual_ret = OrderedDict()
@@ -133,6 +174,9 @@ class BaseModel(ABC):
                 visual_ret[name] = getattr(self, name)
         return visual_ret
 
+    """
+    トレーニング中の損失を返す
+    """
     def get_current_losses(self):
         """Return traning losses / errors. train.py will print out these errors on console, and save them to a file"""
         errors_ret = OrderedDict()
@@ -141,6 +185,9 @@ class BaseModel(ABC):
                 errors_ret[name] = float(getattr(self, 'loss_' + name))  # float(...) works for both scalar tensor and float number
         return errors_ret
 
+    """
+    すべてのネットワークをディスクに保存する
+    """
     def save_networks(self, epoch):
         """Save all the networks to the disk.
 
@@ -158,11 +205,21 @@ class BaseModel(ABC):
                     net.cuda(self.gpu_ids[0])
                 else:
                     torch.save(net.cpu().state_dict(), save_path)
-
+    """
+    state_dict: モデルの状態辞書
+    modlue: 現在のモジュール
+    keys: パラメータのキーのリスト,状態辞書内のパラメータの位置を表す
+    i: 再帰呼び出しのインデックス，初期値は0
+    """
     def __patch_instance_norm_state_dict(self, state_dict, module, keys, i=0):
         """Fix InstanceNorm checkpoints incompatibility (prior to 0.4)"""
         key = keys[i]
         if i + 1 == len(keys):  # at the end, pointing to a parameter/buffer
+            """
+            現在のモジュールが InstanceNorm レイヤーであるかを確認し、
+            running_mean や running_var パラメータが None であれば、
+            それらを state_dict から削除
+            """
             if module.__class__.__name__.startswith('InstanceNorm') and \
                     (key == 'running_mean' or key == 'running_var'):
                 if getattr(module, key) is None:
@@ -173,6 +230,9 @@ class BaseModel(ABC):
         else:
             self.__patch_instance_norm_state_dict(state_dict, getattr(module, key), keys, i + 1)
 
+    """
+    すべてのネットワークをディスクからロードする
+    """
     def load_networks(self, epoch):
         """Load all the networks from the disk.
 
@@ -198,6 +258,9 @@ class BaseModel(ABC):
                     self.__patch_instance_norm_state_dict(state_dict, net, key.split('.'))
                 net.load_state_dict(state_dict)
 
+    """
+    ネットワークのパラメータ数を表示
+    """
     def print_networks(self, verbose):
         """Print the total number of parameters in the network and (if verbose) network architecture
 
@@ -216,6 +279,10 @@ class BaseModel(ABC):
                 print('[Network %s] Total number of parameters : %.3f M' % (name, num_params / 1e6))
         print('-----------------------------------------------')
 
+    """ 
+    ネットワークのrequires_gradフラグを設定する
+    勾配の計算が不要な場合に使用する
+    """
     def set_requires_grad(self, nets, requires_grad=False):
         """Set requies_grad=Fasle for all the networks to avoid unnecessary computations
         Parameters:
